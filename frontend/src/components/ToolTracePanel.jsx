@@ -42,7 +42,7 @@ function EventEntry({ event }) {
       case 'thinking_delta':
         return (
           <span className="italic" style={{ color: 'var(--vg-text-secondary)' }}>
-            {truncate(event.content, 200)}
+            {truncate(event.text, 200)}
             {event.streaming && <span className="animate-blink ml-0.5">|</span>}
           </span>
         )
@@ -50,7 +50,7 @@ function EventEntry({ event }) {
       case 'tool_executing':
         return (
           <span>
-            <span className="font-medium" style={{ color: 'var(--vg-orange)' }}>{event.toolName}</span>
+            <span className="font-medium" style={{ color: 'var(--vg-orange)' }}>{event.tool}</span>
             {event.input && (
               <span className="ml-1.5" style={{ color: 'var(--vg-text-tertiary)' }}>
                 {truncate(event.input, 80)}
@@ -62,7 +62,7 @@ function EventEntry({ event }) {
       case 'tool_result':
         return (
           <span>
-            <span style={{ color: '#4ade80' }}>{event.toolName || 'result'}</span>
+            <span style={{ color: '#4ade80' }}>{event.tool || 'result'}</span>
             {event.output && (
               <span className="ml-1.5" style={{ color: 'var(--vg-text-secondary)' }}>
                 {truncate(event.output, 100)}
@@ -74,7 +74,7 @@ function EventEntry({ event }) {
       case 'subagent_start':
         return (
           <span style={{ color: '#c4b5fd' }}>
-            Delegating to <span className="font-medium">{event.agentName || 'subagent'}</span>
+            Delegating to <span className="font-medium">{event.subagentId ? `worker-${event.subagentId.slice(0, 6)}` : 'subagent'}</span>
             {event.task && <span className="ml-1" style={{ color: '#a78bfa' }}>: {truncate(event.task, 80)}</span>}
           </span>
         )
@@ -82,7 +82,7 @@ function EventEntry({ event }) {
       case 'subagent_thinking':
         return (
           <span className="italic" style={{ color: '#a78bfa' }}>
-            {truncate(event.content, 200)}
+            {truncate(event.text, 200)}
             {event.streaming && <span className="animate-blink ml-0.5">|</span>}
           </span>
         )
@@ -90,7 +90,7 @@ function EventEntry({ event }) {
       case 'subagent_tool':
         return (
           <span>
-            <span className="font-medium" style={{ color: '#c4b5fd' }}>{event.toolName}</span>
+            <span className="font-medium" style={{ color: '#c4b5fd' }}>{event.tool}</span>
             {event.input && (
               <span className="ml-1.5" style={{ color: 'var(--vg-text-tertiary)' }}>
                 {truncate(event.input, 80)}
@@ -102,7 +102,7 @@ function EventEntry({ event }) {
       case 'subagent_complete':
         return (
           <span>
-            <span style={{ color: '#4ade80' }}>{event.agentName || 'Subagent'} complete</span>
+            <span style={{ color: '#4ade80' }}>{event.subagentId ? `worker-${event.subagentId.slice(0, 6)}` : 'Subagent'} complete</span>
             {event.result && (
               <span className="ml-1.5" style={{ color: 'var(--vg-text-secondary)' }}>
                 {truncate(event.result, 100)}

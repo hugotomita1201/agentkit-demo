@@ -44,9 +44,9 @@ export default function ChatDemoPage() {
         setMessages(prev => {
           const last = prev[prev.length - 1]
           if (last && last.role === 'assistant' && last.streaming) {
-            return [...prev.slice(0, -1), { ...last, content: last.content + event.content }]
+            return [...prev.slice(0, -1), { ...last, content: last.content + event.text }]
           }
-          return [...prev, { role: 'assistant', content: event.content, timestamp, streaming: true }]
+          return [...prev, { role: 'assistant', content: event.text, timestamp, streaming: true }]
         })
         break
 
@@ -54,16 +54,16 @@ export default function ChatDemoPage() {
         setEvents(prev => {
           const last = prev[prev.length - 1]
           if (last && last.type === 'thinking_delta' && last.streaming) {
-            return [...prev.slice(0, -1), { ...last, content: last.content + event.content }]
+            return [...prev.slice(0, -1), { ...last, text: last.text + event.text }]
           }
-          return [...prev, { type: 'thinking_delta', content: event.content, timestamp, streaming: true }]
+          return [...prev, { type: 'thinking_delta', text: event.text, timestamp, streaming: true }]
         })
         break
 
       case 'tool_executing':
         setEvents(prev => [...prev, {
           type: 'tool_executing',
-          toolName: event.toolName,
+          tool: event.tool,
           input: event.input,
           timestamp,
         }])
@@ -72,7 +72,7 @@ export default function ChatDemoPage() {
       case 'tool_result':
         setEvents(prev => [...prev, {
           type: 'tool_result',
-          toolName: event.toolName,
+          tool: event.tool,
           output: event.output,
           timestamp,
         }])
@@ -81,7 +81,7 @@ export default function ChatDemoPage() {
       case 'subagent_start':
         setEvents(prev => [...prev, {
           type: 'subagent_start',
-          agentName: event.agentName,
+          subagentId: event.subagentId,
           task: event.task,
           timestamp,
         }])
@@ -91,16 +91,16 @@ export default function ChatDemoPage() {
         setEvents(prev => {
           const last = prev[prev.length - 1]
           if (last && last.type === 'subagent_thinking' && last.streaming) {
-            return [...prev.slice(0, -1), { ...last, content: last.content + event.content }]
+            return [...prev.slice(0, -1), { ...last, text: last.text + event.text }]
           }
-          return [...prev, { type: 'subagent_thinking', content: event.content, timestamp, streaming: true }]
+          return [...prev, { type: 'subagent_thinking', text: event.text, timestamp, streaming: true }]
         })
         break
 
       case 'subagent_tool':
         setEvents(prev => [...prev, {
           type: 'subagent_tool',
-          toolName: event.toolName,
+          tool: event.tool,
           input: event.input,
           timestamp,
         }])
@@ -109,7 +109,7 @@ export default function ChatDemoPage() {
       case 'subagent_complete':
         setEvents(prev => [...prev, {
           type: 'subagent_complete',
-          agentName: event.agentName,
+          subagentId: event.subagentId,
           result: event.result,
           timestamp,
         }])
@@ -118,7 +118,7 @@ export default function ChatDemoPage() {
       case 'artifact':
         setArtifact({
           title: event.title || 'Artifact',
-          type: event.artifactType || 'text',
+          type: event.contentType || 'text',
           content: event.content,
         })
         break

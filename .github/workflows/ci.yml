@@ -29,7 +29,16 @@ jobs:
         with:
           node-version: 20
       - run: cd backend && npm ci
-      - run: |
+      - name: Health check
+        run: |
           DEMO_MODE=true PORT=10000 node backend/src/server.js &
           sleep 3
           curl -f http://localhost:10000/health
+      - name: Stream contract check
+        run: |
+          RESPONSE=$(curl -sf -X POST http://localhost:10000/api/chat/stream \
+            -H "Content-Type: application/json" \
+            -d '{"message":"hello"}')
+          echo "$RESPONSE" | grep -q '"type":"text_delta"' || (echo "FAIL: missing text_delta event" && exit 1)
+          echo "$RESPONSE" | grep -q '"type":"done"' || (echo "FAIL: missing done event" && exit 1)
+          echo "PASS: stream contract verified (text_delta + done)"
