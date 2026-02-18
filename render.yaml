@@ -6,8 +6,6 @@ services:
     buildCommand: cd backend && npm install && cd ../frontend && npm install && npm run build
     startCommand: cd backend && node src/server.js
     envVars:
-      - key: DEMO_MODE
-        value: "true"
       - key: PORT
         value: "10000"
       - key: NODE_ENV

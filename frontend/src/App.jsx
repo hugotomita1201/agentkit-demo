@@ -18,10 +18,10 @@ export default function App() {
           </div>
           <div>
             <h1 className="text-sm font-semibold" style={{ color: 'var(--vg-text-primary)' }}>
-              AgentKit Demo
+              TomitaLaw AI
             </h1>
             <p className="text-xs" style={{ color: 'var(--vg-text-tertiary)' }}>
-              Claude Agent SDK Showcase
+              Claude Agent SDK — Immigration Case Management
             </p>
           </div>
         </div>

@@ -7,11 +7,14 @@
     "dev": "node --watch src/server.js"
   },
   "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.2.45",
     "@anthropic-ai/sdk": "^0.74.0",
     "cors": "^2.8.5",
+    "docx": "^9.5.3",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "helmet": "^8.0.0",
-    "uuid": "^11.0.5"
+    "uuid": "^11.0.5",
+    "zod": "^4.3.6"
   }
 }

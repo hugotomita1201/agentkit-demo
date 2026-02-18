@@ -31,14 +31,50 @@ jobs:
       - run: cd backend && npm ci
       - name: Health check
         run: |
-          DEMO_MODE=true PORT=10000 node backend/src/server.js &
+          PORT=10000 node backend/src/server.js &
           sleep 3
           curl -f http://localhost:10000/health
-      - name: Stream contract check
+      - name: DOCX export endpoint check
         run: |
+          STATUS=$(curl -s -o /dev/null -w '%{http_code}' -X POST http://localhost:10000/api/export/docx \
+            -H "Content-Type: application/json" \
+            -d '{"content":"# Hello\n\nWorld"}')
+          if [ "$STATUS" = "200" ]; then
+            echo "PASS: DOCX export returns 200"
+          else
+            echo "FAIL: DOCX export returned $STATUS"
+            exit 1
+          fi
+
+  integration-test:
+    runs-on: ubuntu-latest
+    needs: [smoke-test]
+    # Only run when ANTHROPIC_API_KEY is available (not on forks/PRs from outside)
+    env:
+      HAS_API_KEY: ${{ secrets.ANTHROPIC_API_KEY != '' }}
+    steps:
+      - uses: actions/checkout@v4
+        if: env.HAS_API_KEY == 'true'
+      - uses: actions/setup-node@v4
+        if: env.HAS_API_KEY == 'true'
+        with:
+          node-version: 20
+      - run: cd backend && npm ci
+        if: env.HAS_API_KEY == 'true'
+      - name: Live agent round-trip
+        if: env.HAS_API_KEY == 'true'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          PORT: 10000
+        run: |
+          node backend/src/server.js &
+          sleep 3
           RESPONSE=$(curl -sf -X POST http://localhost:10000/api/chat/stream \
             -H "Content-Type: application/json" \
-            -d '{"message":"hello"}')
-          echo "$RESPONSE" | grep -q '"type":"text_delta"' || (echo "FAIL: missing text_delta event" && exit 1)
-          echo "$RESPONSE" | grep -q '"type":"done"' || (echo "FAIL: missing done event" && exit 1)
-          echo "PASS: stream contract verified (text_delta + done)"
+            -d '{"message":"Hello, what can you help with?"}')
+          echo "$RESPONSE" | grep -q '"type":"text_delta"' || (echo "FAIL: no text_delta in live mode" && exit 1)
+          echo "$RESPONSE" | grep -q '"type":"end"' || echo "$RESPONSE" | grep -q '"type":"complete"' || (echo "FAIL: no end/complete event" && exit 1)
+          echo "PASS: live agent round-trip verified"
+      - name: Skip notice
+        if: env.HAS_API_KEY != 'true'
+        run: echo "SKIP: ANTHROPIC_API_KEY not available — integration test skipped"

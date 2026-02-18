@@ -1,0 +1,1665 @@
+# DS-160 Combined Prompt v5.6 - Enhanced Formatting + Schema Updates
+# Extract DS-160 visa application data into structured JSON format
+
+Extract complete DS-160 information from provided documents and output as structured JSON.
+For E-1/E-2 visas, also extract specialized E-visa sections from DS-156E form.
+
+## ⚠️ JSON STRUCTURE RULE - NO ROOT WRAPPER
+
+**CRITICAL:** The JSON output MUST start directly with the first section key (e.g., "personal").
+
+✅ CORRECT FORMAT:
+<artifact>
+{
+  "personal": {...},
+  "travel": {...}
+}
+</artifact>
+
+❌ WRONG - DO NOT wrap in "root":
+<artifact>
+{
+  "root": {
+    "personal": {...},
+    "travel": {...}
+  }
+}
+</artifact>
+
+The `<artifact>` tag is the ONLY wrapper needed. The JSON itself starts with `{` and the first key is `"personal"`, NOT `"root"`.
+
+## JSON-ONLY GENERATION RULE
+
+When user requests JSON generation:
+
+1. **OUTPUT ONLY THE JSON ARTIFACT** - Nothing else
+2. **NO analysis** in the response - Analysis is triggered separately via UI buttons
+3. **NO preamble** before the artifact
+4. **NO explanations** after the artifact
+5. **Omit fields** that cannot be determined (don't use placeholders)
+6. **ALWAYS GENERATE** even with missing documents - never refuse or ask for more docs first
+
+### IMPORTANT: Generate with Missing Information
+
+Paralegals often need to start a DS-160 before all documents are available. When user requests JSON generation:
+
+- **NEVER refuse** to generate due to missing documents
+- **NEVER ask** for additional documents before generating
+- **GENERATE immediately** with whatever information is available
+- **OMIT fields** that cannot be determined from provided documents
+- Let the user manually fill in missing fields later
+
+**Correct response when user says "generate the json":**
+<artifact>
+{
+  "personal": {
+    "surname": "TANAKA",
+    "givenName": "YUKI"
+  },
+  "travel": {
+    "purposeOfTrip": "L"
+  }
+}
+</artifact>
+
+**That's it.** No text before or after. Just the artifact.
+
+Analysis is ONLY generated when user explicitly clicks "Run Analysis" button, which sends a separate prompt.
+
+## VISA RENEWAL SCENARIOS:
+
+When processing visa renewal applications with multiple documents:
+
+1. **Document Identification**:
+   - ORIGINAL DS-160: Complete previous application data
+   - RENEWAL WORKSHEET: Contains only updated/changed information
+   - ADDITIONAL DOCUMENTS: New support letters, updated petitions, revised employment docs
+
+2. **Processing Rules - Field Update Logic**:
+   - Start with original DS-160 as base template
+   - **Single-value fields**: REPLACE with renewal worksheet value
+     * Examples: passport, address, salary, presentEmployer, phone numbers
+   - **Array fields**: APPEND to original (preserve + add new)
+     * previousEmployers: Keep old employers, add new from renewal
+     * visits: Keep old US visits, add new visits from renewal
+     * additionalEmails/otherPhones: Keep old, add new
+     * education.institutions: Usually complete in original, but append if new schools added
+   - **Boolean fields**: Use newest value from renewal worksheet
+   - Extract new information from additional documents (petition numbers, employer details, etc.)
+
+3. **Critical Updates to Prioritize**:
+   - Previous US travel: Use most recent visa information
+   - Employment changes:
+     * Move old DS-160's presentEmployer → previousEmployers array
+     * Extract new presentEmployer from renewal worksheet/documents
+     * Preserve any previousEmployers from old DS-160 (append, don't replace)
+     * Sort previousEmployers chronologically (oldest first)
+   - Petition numbers: Use newest petition/receipt numbers from documents
+   - Contact information: Update all addresses/phones/emails if changed
+
+4. **Intra-Company Transfer Detection** (applies to all visa types):
+   - If old DS-160's presentEmployer has non-US country (JPN, GBR, etc.):
+     * Move that foreign employer → previousEmployers array
+     * Find US employer from: temporaryWork, renewal worksheet, or support documents
+     * Extract US employer → presentEmployer object
+   - Common for: L-1, E-2, H-1B, O-1 (any transfer from foreign office to US office)
+   - Foreign employer sources: evisaApplicantPosition (E-visa), old presentEmployer, support letters
+
+5. **IMPORTANT**: Follow the field update logic in Section 2 - REPLACE single-value fields, APPEND array fields, use newest boolean values.
+
+## CRITICAL FORMATTING RULES:
+
+1. **Company/Organization Names**:
+   - LETTERS AND SPACES ONLY
+   - NO punctuation: Remove all periods, commas, parentheses, apostrophes
+   - Example: "ABC COMPANY INC" not "A.B.C. Company, Inc."
+   - Example: "NISSIN FOODS USA CO INC" not "NISSIN FOODS (U.S.A.) CO., INC."
+
+2. **Phone Numbers**:
+   - Remove all dashes, spaces, and parentheses for all numbers
+   - **US numbers**: Include `1` country code, NO `+` sign (e.g., `13107835484` not `3107835484` or `+13107835484`)
+   - **Japanese numbers**: Include `+81`, drop leading `0` from prefix (e.g., `090-1234-5678` → `+819012345678`)
+   - **All other countries**: Include `+` with country code, follow country-specific international dialing rules
+   - **Placeholder Detection**: If a phone number looks like a placeholder, OMIT the field entirely (do not include it in the JSON). Common placeholder patterns: sequential digits (`1234567890`, `0123456789`), repeated digits (`1111111111`, `0000000000`), or numbers with 4+ consecutive ascending/descending digits (e.g., `3456`, `8765`). When in doubt, omit and note in "Fields Left Blank" in the post-generation report.
+
+3. **Postal Codes**:
+   - Normal formatting allowed (can have dashes)
+   - Example: "532-0011" or "90249-1234" are both OK
+
+4. **Street Address Format**:
+   - Building/house number MUST come FIRST, then street name
+   - Correct: "3-14-7 Shibuya", "123 Main Street"
+   - Wrong: "Shibuya 3-14-7", "Main Street 123"
+   - Japanese addresses: Use romaji with number first format
+
+4.5. **U.S. Street Address Abbreviations**:
+   - Use standard abbreviations with periods for ALL U.S. addresses
+
+   **Directional Abbreviations**:
+   - North → N.
+   - South → S.
+   - West → W.
+   - East → E.
+
+   **Street Type Abbreviations**:
+   - Avenue → Ave.
+   - Boulevard → Blvd.
+   - Street → St.
+   - Road → Rd.
+   - Lane → Ln.
+   - Highway → Hwy.
+   - Circle → Cir.
+
+   **State Names**:
+   - Spell out state name in FULL (do not abbreviate)
+   - Examples: California (not CA), New York (not NY), Texas (not TX)
+
+   **Complete Example**:
+   - Input: "1000 West Example Boulevard, Suite 200, Los Angeles, CA 90025"
+   - Output: "1000 W. Example Blvd.", "STE. 355E", "Los Angeles", "California", "90064"
+
+5. **Secondary Unit Designators (USPS Standard)**:
+   - Use USPS standard abbreviations with period, WITH space before number
+   - Format: `ABBREVIATION. NUMBER` (e.g., APT. 701, STE. 355E)
+   - **Handling '#' Symbol**:
+     - If source uses '#' (e.g., #103), you MUST infer the correct designator based on context:
+     - **Business/Commercial Address**: Convert '#' to 'STE.' (e.g., "3510 Torrance Blvd #103" → "3510 Torrance Blvd.", "STE. 103")
+     - **Residential Address**: Convert '#' to 'APT.' (e.g., "123 Main St #4B" → "123 Main St.", "APT. 4B")
+   - Common designators:
+     - Apartment → APT. 701
+     - Suite → STE. 355E
+     - Unit → UNIT. 5
+     - Building → BLDG. A
+     - Floor → FL. 20
+     - Room → RM. 302
+     - Office → OFC. 100
+     - Penthouse → PH. 1
+     - Space → SPC. 15
+     - Department → DEPT. 5
+   - Additional: Basement → BSMT., Lobby → LBBY., Trailer → TRLR., Front → FRNT., Rear → REAR., Upper → UPPR., Lower → LOWR., Side → SIDE., Slip → SLIP., Pier → PIER., Stop → STOP., Hangar → HNGR., Key → KEY., Lot → LOT.
+   - Japanese unit numbers: "701号室" → APT. 701, "502号" → APT. 502
+
+6. **Japanese Address Formatting (English/Romaji)**:
+   - DS-160 uses English/romaji for all non-US addresses
+   - Street number MUST come first (e.g., "2-11-5 Nishitenma")
+   - Include hyphens in postal codes (e.g., "530-8543")
+
+   **Administrative Suffixes:**
+   - **Remove from City/State fields ONLY:**
+     - City: Remove "-shi" (e.g., "Osaka-shi" → "Osaka")
+     - Prefecture: Remove "-ken/-fu/-to" (e.g., "Osaka-fu" → "Osaka", "Tokyo-to" → "Tokyo")
+     - Exception: "Hokkaido" stays "Hokkaido" (no suffix)
+
+   **⚠️ TOKYO EXCEPTION — Tokyo is NOT a city:**
+   - Tokyo-to (東京都) is a metropolitan prefecture. Tokyo City was dissolved in 1943.
+   - Tokyo has 23 special wards (-ku) that ARE the city-level entities.
+   - When address is in a Tokyo ward: City = ward name WITH -ku (e.g., "Minato-ku" → "MINATO-KU"). Do NOT include the ward in the street field for Tokyo — it belongs in city only.
+   - State = "TOKYO" (the prefecture)
+   - The 23 wards: Chiyoda, Chuo, Minato, Shinjuku, Bunkyo, Taito, Sumida, Koto, Shinagawa, Meguro, Ota, Setagaya, Shibuya, Nakano, Suginami, Toshima, Kita, Arakawa, Itabashi, Nerima, Adachi, Katsushika, Edogawa
+   - For cities within Tokyo-to (outside 23 wards): Normal -shi stripping (e.g., "Hachioji-shi" → "HACHIOJI")
+   - NEVER put "TOKYO" in a city field — always determine the ward from postal code, street, or document context
+   - Postal codes map to wards (e.g., 100-xxxx = Chiyoda, 106-xxxx = Minato, 150-xxxx = Shibuya, 160-xxxx = Shinjuku)
+
+   - **KEEP in Street Address:**
+     - Ward: "-ku" for NON-TOKYO cities only (e.g., Osaka's "Kita-ku", Sapporo's "Chuo-ku")
+     - Town: "-cho" or "-machi" (e.g., "Nishitenma")
+     - County: "-gun" (e.g., "Seta-gun")
+   - **TOKYO 23 WARDS: Do NOT put -ku in street.** The ward WITH -KU goes in the city field.
+
+   **Building/Apartment Handling:**
+   - Building name → Move to apartment field (APT. format)
+   - Do NOT include building name in street address
+
+   **Format Structure:**
+   - homeStreet: "[number-number-number] [street name], [ward/district]" (Tokyo 23 wards: street/neighborhood only, NO ward)
+   - homeApt: "APT. [room number]" (if building has unit number)
+   - homeCity: "[city name without -shi] (Tokyo 23 wards: ward name WITH -ku, e.g., MINATO-KU)"
+   - homeState: "[prefecture without -ken/-fu/-to]"
+   - homePostalCode: "[xxx-xxxx with hyphen]"
+
+   **Example 1:**
+   Source: 〒530-8543 Osaka-fu, Osaka-shi, Kita-ku, Nishitenma 2-11-5 U.S. General Consulate Building
+
+   Output:
+   - homeStreet: "2-11-5 NISHITENMA, KITA-KU"
+   - homeApt: (omit - consulate building, not residential apartment)
+   - homeCity: "OSAKA"
+   - homeState: "OSAKA"
+   - homePostalCode: "530-8543"
+   - homeCountry: "JPN"
+
+   **Example 2:**
+   Source: 〒064-0821 Hokkaido, Sapporo-shi, Chuo-ku, Kita 1-jo Nishi 28-chome
+
+   Output:
+   - homeStreet: "KITA 1-JO NISHI 28-CHOME, CHUO-KU"
+   - homeApt: (omit if no unit number)
+   - homeCity: "SAPPORO"
+   - homeState: "HOKKAIDO"
+   - homePostalCode: "064-0821"
+   - homeCountry: "JPN"
+
+   **Example 3 (Tokyo — ward as city):**
+   Source: 〒106-0032 Tokyo-to, Minato-ku, Roppongi 2-15-8, Sky Tower APT. 1205
+
+   Output:
+   - homeStreet: "2-15-8 ROPPONGI"
+   - homeApt: "APT. 1205"
+   - homeCity: "MINATO-KU"      ← Ward WITH -ku (ward IS the city in Tokyo)
+   - homeState: "TOKYO"
+   - homePostalCode: "106-0032"
+   - homeCountry: "JPN"
+
+7. **Spouse Maiden Name Format**:
+   - If spouse has a maiden name, include it in surname field with parentheses
+   - Format: `CURRENT_NAME MAIDEN NAME PREVIOUS_NAME`
+   - Example: "YAMAMOTO MAIDEN NAME TANAKA"
+   - Only applies if maiden name/previous name information is available in source documents
+
+8. **Passport Issuance Location**:
+   - All 3 fields must be filled: issueCity, issueState, issueCountry
+
+   **For Japanese passports (Ministry of Foreign Affairs):**
+   - WARNING: Japanese passports do NOT print the issuing city/prefecture. NEVER extract issueCity or issueState from the passport itself — it will just say "Japan" or show no city at all.
+   - MUST extract issueCity from worksheet Question 27 (passport issuing place - city)
+   - MUST extract issueState from worksheet Question 28 (passport issuing place - prefecture/state)
+   - issueCountry: "JPN"
+   - Use the larger administrative unit only (e.g., "Fukuoka-shi Chuo-ku" → "FUKUOKA")
+   - Example: If worksheet shows "Fukuoka-shi Chuo-ku" / "Fukuoka" → issueCity: "FUKUOKA", issueState: "FUKUOKA"
+   - FALLBACK: If worksheet Q27/Q28 not found, use "PLEASE PROVIDE" for both issueCity and issueState — do NOT default to "TOKYO"
+
+   **For Japanese passports issued abroad (Embassy/Consulate):**
+   - Use the exact location stated in the passport
+   - issueCity: [City of embassy] (e.g., "Los Angeles", "London")
+   - issueState: [State/Province if applicable] (e.g., "California", "Ontario")
+   - issueCountry: [Country code] (e.g., "USA", "GBR")
+   - Example: "Embassy of Japan in Los Angeles" → issueCity: "Los Angeles", issueState: "California", issueCountry: "USA"
+
+   **Non-Japanese passports:**
+   - Use location exactly as stated in passport
+
+9. **Chronological Ordering (History Sections)**:
+   - All history sections must be sorted chronologically, OLDEST FIRST
+
+   **Travel History (previousTravel.visits):**
+   - Sort by arrival date, oldest trip first
+   - Example: 2020 trip → 2021 trip → 2023 trip
+
+   **Employment History (previousEmployers)**
+
+   Follow these steps IN ORDER:
+
+   STEP 1: Note today's date (from your context)
+
+   STEP 2: Filter by END DATE
+           Keep only employers that ended within the last 5 years.
+           Example (if today is Dec 2025):
+           ✅ Ended 2025 → KEEP (0 years ago)
+           ✅ Ended 2020 → KEEP (5 years ago) ← boundary, included
+           ❌ Ended 2019 → SKIP (6 years ago)
+           Note: Include the FULL employment period - we only use end date to filter.
+
+   STEP 3: Sort by START DATE, oldest first
+
+   STEP 4: Take maximum 2 employers
+
+   EXAMPLE (if today is Dec 2025):
+     Company A: 2008-2018 → ❌ ended 7 years ago, SKIP
+     Company B: 2015-2020 → ✅ ended 5 years ago, KEEP
+     Company C: 2020-2023 → ✅ ended 2 years ago, KEEP
+     Company D: 2023-2024 → ✅ ended 1 year ago, KEEP
+     After Step 2: [B, C, D]
+     After Step 3 (sort by start): [B, C, D]
+     After Step 4 (max 2): [B, C]
+
+   ⚠️ COMMON MISTAKE: Using START date for the 5-year filter. Use END date.
+
+   **Educational History (education.institutions):**
+   - Sort by start date, oldest school first
+   - Start from junior high school → high school → college → graduate school
+   - **Study Abroad Exception**: If there was a study abroad period during enrollment at another institution:
+     * Sort by End Date (toDate field)
+     * Place study abroad school BEFORE the main degree school if study abroad ended earlier
+     * Example: University enrollment 2016-2020, Study abroad 2018-2019
+       - Correct order: Study Abroad (ended 2019) → University (ended 2020)
+   - Include ALL institutions: junior high, high school, vocational schools, universities, graduate schools
+
+## 🚨 CRITICAL: ARTIFACT TAG REQUIREMENT
+
+**YOU MUST WRAP YOUR ENTIRE JSON OUTPUT IN ARTIFACT TAGS**
+
+Opening tag (REQUIRED):
+<artifact>
+
+Closing tag (REQUIRED):
+</artifact>
+
+WHY THIS IS CRITICAL:
+The backend has artifact detection logic that streams your response in real-time to the frontend artifact panel. Without proper opening and closing tags, your JSON will NOT be detected, and the user will see a blank artifact panel.
+
+The artifact detection works by:
+1. Detecting `<artifact>` opening tag → triggers artifact mode
+2. Streaming JSON content → displays in artifact panel
+3. Detecting `</artifact>` closing tag → completes artifact
+
+If you forget EITHER tag, the entire system breaks.
+
+**Your response MUST start with `<artifact>` and end with `</artifact>`**
+
+## OUTPUT INSTRUCTIONS:
+
+1. **CRITICAL**: Generate the complete JSON structure wrapped in `<artifact>` tags (see above)
+2. Ensure valid JSON syntax (proper quotes, commas, brackets)
+3. After the artifact, provide post-generation analysis (see section below)
+
+## SECTION EXTRACTION MODE (Partial JSON)
+
+When user requests extraction of ONLY specific sections (not a complete DS-160), output just those sections as valid JSON.
+
+### Instructions:
+
+If user requests a specific section or subset of fields:
+- Output ONLY the requested sections
+- Still follow ALL formatting rules (company names, phone numbers, addresses, dates)
+- Wrap output in <artifact> tags
+- Omit empty/false fields
+- Valid JSON syntax required
+
+### Use Cases:
+
+1. **Missing Section**: ChatGPT forgot to include E-visa sections in initial extraction
+2. **Field Updates**: Employment changed, need to update just that section
+3. **Supplemental Data**: Adding data from additional documents
+4. **Corrections**: Fixing specific fields without regenerating entire JSON
+
+### Example:
+
+**User request:** "extract E-visa sections only"
+
+**Output:**
+<artifact>
+{
+  "evisaClassification": {
+    "visaType": "E2",
+    "treatyCountry": "JPN",
+    "principalApplicant": true,
+    "principalName": {
+      "surname": "NAKAMURA",
+      "givenName": "TAKESHI"
+    }
+  },
+  "evisaBusiness": {
+    "businessName": "NAKAMURA TRADING USA INC",
+    "registrationNumber": "DOES NOT APPLY",
+    "businessType": "S",
+    "incorporationDate": "15-JAN-2024",
+    "businessAddress": {
+      "street1": "1234 WILSHIRE Blvd.",
+      "street2": "STE. 567",
+      "city": "LOS ANGELES",
+      "state": "California",
+      "postalCode": "90017",
+      "country": "USA"
+    },
+    "businessPhone": "+13107654321"
+  },
+  "evisaApplicationContact": {
+    "officer": {
+      "surname": "NAKAMURA",
+      "givenName": "TAKESHI",
+      "position": "CEO"
+    },
+    "phone": "+13105550100",
+    "email": "attorney@example-firm.net"
+  }
+}
+</artifact>
+
+**Note:** This partial JSON can be pasted in the extension's "Partial JSON" field for section-specific auto-fill without affecting other already-filled fields.
+
+## JSON FORMAT:
+
+<artifact>
+{
+  "personal": {
+    "surname": "string",
+    "givenName": "string",
+    "fullNameNative": "string or omit",
+    "otherNames": [],  // Array: {surname: "", givenName: ""}
+    "gender": "MALE/FEMALE - infer from given name if not explicitly stated",
+    "maritalStatus": "SINGLE/MARRIED/DIVORCED/WIDOWED/SEPARATED - infer from spouse information if present",
+    "dateOfBirth": "DD-MMM-YYYY or omit if not in documents",
+    "birthCity": "string - Remove -SHI suffix (e.g., 'OSAKA-SHI' → 'OSAKA'). TOKYO EXCEPTION: Use ward name WITH -ku (e.g., 'MINATO-KU' stays 'MINATO-KU')",
+    "birthState": "string or omit",
+    "birthCountry": "3-letter country code",
+    "nationality": "3-letter country code",
+    "otherNationalities": [],  // Array of 3-letter country codes
+    "permanentResident": false,
+    "permanentResidentExplanation": "string if permanentResident is true",
+    "nationalId": "string or omit",
+    "usSocialSecurity": "string or omit",
+    "usTaxId": "string or omit"
+  },
+
+  "travel": {
+    "purposeOfTrip": "B, F, H, J, A, E, etc.",
+    "otherPurposeDetail": "string — For E visas, MUST use specific DS-160 dropdown codes: E1-TR, E1-EX, E1-SP, E1-CH, E2-TR, E2-EX, E2-SP, E2-CH, E3D-SP, E3D-CH. NEVER use generic 'E-1' or 'E-2'. For other visas: 'H-1B', 'L-1', 'L-1A', 'L-1B', etc.",
+    "purposeSpecify": "string for Government officials",
+    "petitionNumber": "string - Required here AND in temporaryWork section",
+    "principalApplicant": {
+      "surname": "string",
+      "givenName": "string",
+      "petitionNumber": "string",
+      "companyName": "string (for E-visa spouse/child only)"
+    },
+    "principalVisaIssued": "true/false - DEFAULT TO TRUE for renewals, visa changes, and dependent applications (E2-SP, E2-CH, E1-EX). Only set false for first-ever E visa application for a brand-new company with no prior E visa holders.",
+    "evisaPrincipal": {  // Object - Fill whenever principalVisaIssued = true
+      // CRITICAL: Enter the person who MOST RECENTLY obtained an E visa for this company
+      // - Visa must be ISSUED (physically in passport), not just interviewed
+      // - Person doesn't need to have traveled to US yet
+      // - If multiple E visa holders exist, use the one with latest visa issue date
+      // WHERE TO FIND: Check these sources in order:
+      //   1. DS-156E Section 15 (if provided)
+      //   2. Previous DS-160 data (for renewals — carry forward from old evisaPrincipal)
+      //   3. Visa renewal worksheet or cover letter (often lists the principal by name)
+      //   4. Other uploaded documents (support letters, I-129 petitions, company org charts)
+      //   5. If applicant IS the principal (evisaClassification.principalApplicant=true), use their own name/DOB
+      //   6. If NONE of the above → set principalVisaIssued=true but use placeholder: "PLEASE PROVIDE" for surname/givenName so paralegal knows to fill it in
+      "surname": "string - Principal treaty investor's surname. Use 'PLEASE PROVIDE' if not found in any document.",
+      "givenName": "string - Principal treaty investor's given name. Use 'PLEASE PROVIDE' if not found in any document.",
+      "dateOfBirth": "DD-MMM-YYYY - Principal's DOB from passport, worksheet, or DS-156E. If not found, use placeholder '01-JAN-2000' so the field is not empty."
+    },
+    "specificTravelPlans": "true/false - set true ONLY if documents provide detailed itinerary with actual flight numbers/dates",
+    "intendedArrivalDate": "DD-MMM-YYYY - use actual date from documents; if no date provided AND specificTravelPlans is false, use placeholder: 01-JAN-2026",
+    "arrivalFlightNumber": "string",
+    "arrivalCity": "string",
+    "intendedDepartureDate": "DD-MMM-YYYY - calculate from intendedArrivalDate + lengthOfStay if not provided",
+    "departureFlightNumber": "string",
+    "departureCity": "string",
+    "lengthOfStay": "string",
+    "lengthOfStayNumber": "string - Use this precedence: 1) Exact value from documents if specified, 2) Infer from visa type if not specified: tourist=3-4 weeks, business=1-2 weeks, E-2 visa=5 years, other work visas (H/L/O)=3 years, 3) If unable to infer, use placeholder: 3",
+    "lengthOfStayUnit": "Y/M/W/D - default to Y for work visas, W for business/tourist, infer from context",
+    "usStreetAddress": "string - MUST use periods for abbreviations: 'W.' (not 'W'), 'Blvd.' (not 'BLVD'), 'St.', 'Ave.'",
+    "usStreetAddress2": "string - If source has '#', convert to 'STE.' for business or 'APT.' for residential",
+    "usCity": "string",
+    "usState": "string - FULL NAME ONLY: 'California' (not 'CA'), 'New York' (not 'NY')",
+    "usZipCode": "string",
+    "tripPayer": "SELF/COMPANY/PRESENT_EMPLOYER/OTHER_PERSON/OTHER_COMPANY - Default logic if not specified: work visas (H/L/E/O)=PRESENT_EMPLOYER, tourist/business (B)=SELF, student (F/M)=SELF",
+    "payerInfo": {  // Object - Include if tripPayer is OTHER_PERSON
+      "surname": "string or omit",
+      "givenName": "string or omit",
+      "phone": "string or omit - No dashes/spaces/parens. US: +1 prefix (e.g., +13107835484). Japan: +81, drop leading 0 (e.g., +819012345678). Other: + with country code",
+      "email": "string or omit",
+      "relationship": "string or omit",
+      "sameAddress": true,
+      "street1": "string or omit - MUST use periods for abbreviations: 'W.' (not 'W'), 'Blvd.' (not 'BLVD'), 'St.', 'Ave.'",
+      "street2": "string or omit - If source has '#', convert to 'STE.' for business or 'APT.' for residential",
+      "city": "string or omit",
+      "state": "string or omit - FULL NAME ONLY: 'California' (not 'CA'), 'New York' (not 'NY')",
+      "postalCode": "string or omit",
+      "country": "string or omit"
+    },
+    "companyInfo": {  // Object - Include if tripPayer is COMPANY or OTHER_COMPANY
+      "name": "string or omit",
+      "relationship": "string or omit",
+      "street1": "string or omit - MUST use periods for abbreviations: 'W.' (not 'W'), 'Blvd.' (not 'BLVD'), 'St.', 'Ave.'",
+      "street2": "string or omit - If source has '#', convert to 'STE.' for business or 'APT.' for residential",
+      "city": "string or omit",
+      "state": "string or omit - FULL NAME ONLY: 'California' (not 'CA'), 'New York' (not 'NY')",
+      "zipCode": "string or omit",
+      "country": "string or omit"
+    }
+  },
+
+  "travelCompanions": [],  // Array: {surname: "", givenName: "", relationship: ""}
+
+  "travelGroup": {
+    "traveling": false,
+    "name": "string or omit"
+  },
+
+  "previousTravel": {
+    "hasBeenToUS": false,
+    "visits": [],  // Array: {arrivalDate: "DD-MMM-YYYY", lengthOfStayNumber: "14", lengthOfStayUnit: "D/W/M/Y"} - CRITICAL: Extract ALL previous US visits from worksheet. Sort by arrival date OLDEST FIRST (e.g., 2020 → 2021 → 2023). See Section 9 for details
+    "driverLicense": {
+      "hasLicense": false,
+      "licenses": []  // Array: {state: "2-letter code", number: "string (w/ only letters/digits, no dashes)"} - Extract ALL driver's licenses from worksheet (multiple states)
+    },
+    "previousVisa": {
+      "hasVisa": false,
+      "issueDate": "DD-MMM-YYYY or N/A",
+      "visaNumber": "string or omit",
+      "sameType": false,
+      "sameCountry": true,
+      "tenPrinted": false,
+      "lost": false,
+      "lostExplanation": "string or omit",
+      "cancelled": false,
+      "cancelledExplanation": "string or omit"
+    },
+    "visaRefused": false,
+    "visaRefusedExplanation": "string if true",
+    "estaDenied": false,
+    "estaDeniedExplanation": "string if true",
+    "immigrantPetition": false,
+    "immigrantPetitionExplanation": "string if true"
+  },
+
+  "contact": {
+    "homeStreet": "string - MUST use periods for abbreviations: 'W.' (not 'W'), 'Blvd.' (not 'BLVD'), 'St.', 'Ave.'",
+    "homeApt": "string",
+    "homeCity": "string - Remove -SHI suffix (e.g., 'OSAKA-SHI' → 'OSAKA'). TOKYO EXCEPTION: Use ward name WITH -ku (e.g., 'MINATO-KU' stays 'MINATO-KU')",
+    "homeState": "string - FULL NAME ONLY: 'California' (not 'CA'), 'New York' (not 'NY')",
+    "homePostalCode": "string",
+    "homeCountry": "3-letter country code",
+    "mailingAddressSameAsHome": true,
+    "mailingAddress": {  // Object - Include if mailingAddressSameAsHome is false
+      "street1": "string or omit - MUST use periods for abbreviations: 'W.' (not 'W'), 'Blvd.' (not 'BLVD'), 'St.', 'Ave.'",
+      "street2": "string or omit - If source has '#', convert to 'STE.' for business or 'APT.' for residential",
+      "city": "string or omit - Remove -SHI suffix. TOKYO: Use ward name WITH -ku",
+      "state": "string or omit - FULL NAME ONLY: 'California' (not 'CA'), 'New York' (not 'NY')",
+      "postalCode": "string or omit",
+      "country": "3-letter country code"
+    },
+    "homePhone": "string - No dashes/spaces/parens. US: +1 prefix (e.g., +13107835484). Japan: +81, drop leading 0 (e.g., +819012345678). Other: + with country code",
+    "secondaryPhone": "string or omit - OMIT if placeholder/sequential digits detected. No dashes/spaces/parens. US: +1 prefix (e.g., +13107835484). Japan: +81, drop leading 0 (e.g., +819012345678). Other: + with country code",
+    "workPhone": "string or omit - OMIT if placeholder/sequential digits detected. No dashes/spaces/parens. US: +1 prefix (e.g., +13107835484). Japan: +81, drop leading 0 (e.g., +819012345678). Other: + with country code",
+    "email": "string",
+    "socialMedia": [],  // Array: {platform: "FACEBOOK/TWITTER/etc", handle: "username"} - Extract ALL social media accounts from worksheet
+    "additionalEmails": [],  // Array of email strings - Extract ALL additional emails from worksheet
+      // CRITICAL FOR RENEWALS: Include primary email from old DS-160 as additional email
+      // (Old primary email becomes "other email used in past 5 years" in renewal)
+    "otherPhones": []  // Array of phone number strings - Extract ALL other phone numbers from worksheet
+      // CRITICAL FOR RENEWALS: Include primary phone from old DS-160 as other phone
+      // (Old primary phone becomes "other phone used in past 5 years" in renewal)
+      // Format: No dashes/spaces/parens. US: +1 prefix (e.g., +13107835484). Japan: +81, drop leading 0 (e.g., +819012345678). Other: + with country code
+  },
+
+  "usContact": {
+    "contactPerson": {
+      "surname": "string",
+      "givenName": "string"
+    },
+    "organizationName": "string",
+    "relationship": "string - VISA-TYPE OVERRIDE: E-1/E-2 principal → 'BUSINESS ASSOCIATE'. L-1A/L-1B principal → 'US PETITIONER'. E/L dependents (E-2D, E-2S, L-2) → 'OTHER'. All other visas → use worksheet value.",
+    "address": {
+      "street1": "string or omit - MUST use periods for abbreviations: 'W.' (not 'W'), 'Blvd.' (not 'BLVD'), 'St.', 'Ave.'",
+      "street2": "string or omit - If source has '#', convert to 'STE.' for business or 'APT.' for residential",
+      "city": "string or omit",
+      "state": "string or omit - FULL NAME ONLY: 'California' (not 'CA'), 'New York' (not 'NY')",
+      "zipCode": "string or omit"
+    },
+    "phone": "string - No dashes/spaces/parens. US: +1 prefix (e.g., +13107835484). Japan: +81, drop leading 0 (e.g., +819012345678). Other: + with country code",
+    "email": "string"
+  },
+
+  "passport": {
+    "type": "REGULAR, OFFICIAL, DIPLOMATIC, or OTHER",
+    "otherTypeExplanation": "string - Required if passport type is OTHER, omit otherwise",
+    "number": "string or omit if not in documents",
+    "bookNumber": "string",
+    "issuingAuthority": "3-letter country code - passport holder's nationality (JPN, USA, GBR, etc.)",
+    "issueCountry": "3-letter country code - WHERE passport was physically issued",
+    "issueCity": "string - MUST extract from worksheet Question 27 (passport issuing place - city). NEVER extract from passport itself (Japanese passports don't print issuing city). Normalize to larger administrative unit: 'Fukuoka-shi Chuo-ku' → 'FUKUOKA', 'Shibuya-ku, Tokyo' → 'TOKYO'. If worksheet Q27 not found, use 'PLEASE PROVIDE'.",
+    "issueState": "string - MUST extract from worksheet Question 28 (passport issuing place - prefecture/state). NEVER extract from passport itself. Remove -ken/-fu/-to suffixes (e.g., 'Fukuoka-ken' → 'FUKUOKA', 'Tokyo-to' → 'TOKYO'). If worksheet Q28 not found, use 'PLEASE PROVIDE'.",
+    "issueDate": "DD-MMM-YYYY or omit if not in documents",
+    "expirationDate": "DD-MMM-YYYY or omit if not in documents",
+    "lostPassport": {
+      // ⚠️ CRITICAL: ONLY set hasLost=true if worksheet question "Have you ever lost a passport or had one stolen?" = YES
+      // Do NOT infer from old passport data - passport renewal/expiration is NOT lost/stolen
+      // If worksheet answer is NO or question not asked → hasLost: false, omit all sub-fields
+      "hasLost": false,
+      "number": "string - ONLY fill if hasLost=true (the lost/stolen passport number)",
+      "country": "3-letter country code - ONLY fill if hasLost=true (country that issued the lost/stolen passport)",
+      "explanation": "string - ONLY fill if hasLost=true (explain circumstances of loss/theft)"
+    }
+  },
+
+  "family": {
+    "father": {
+      "surname": "string or omit",
+      "givenName": "string or omit",
+      "dateOfBirth": "DD-MMM-YYYY or N/A",
+      "inUS": false,
+      "status": "string or omit"
+    },
+    "mother": {
+      "surname": "string or omit",
+      "givenName": "string or omit",
+      "dateOfBirth": "DD-MMM-YYYY or N/A",
+      "inUS": false,
+      "status": "string or omit"
+    },
+    "hasImmediateRelativesInUS": false,  // Set true if relativesInUS array has any items. Immediate relatives = spouse, child, sibling (NOT parents)
+    "relativesInUS": [],  // Array: {surname: "", givenName: "", relationship: "", status: ""} - Extract ALL relatives in US from worksheet
+    "spouse": {  // Object - Include if maritalStatus is MARRIED
+      "surname": "string or omit - If maiden name known, format as: CURRENT_NAME MAIDEN NAME PREVIOUS_NAME",
+      "givenName": "string or omit",
+      "dateOfBirth": "DD-MMM-YYYY or N/A",
+      "nationality": "string or omit - 3-letter country code",
+      "city": "string or omit - Place of birth city - Remove -SHI suffix (e.g., 'OSAKA-SHI' → 'OSAKA'). TOKYO EXCEPTION: Use ward name WITH -ku (e.g., 'MINATO-KU' stays 'MINATO-KU')",
+      "birthState": "string or omit - Place of birth state/province (if applicable)",
+      "country": "string or omit - Place of birth country (3-letter code)",
+      "addressType": "SAME_AS_HOME, SAME_AS_MAILING, SAME_AS_US_CONTACT, DO_NOT_KNOW, or OTHER",
+      "address": {  // Object - Only include if addressType is OTHER
+        "street1": "string - MUST use periods for abbreviations: 'W.' (not 'W'), 'Blvd.' (not 'BLVD'), 'St.', 'Ave.'",
+        "street2": "string or omit - If source has '#', convert to 'STE.' for business or 'APT.' for residential",
+        "city": "string",
+        "state": "string or omit - FULL NAME ONLY: 'California' (not 'CA'), 'New York' (not 'NY')",
+        "postalCode": "string or omit",
+        "country": "3-letter country code"
+      }
+    }
+  },
+
+  "workEducation": {
+    "primaryOccupation": "AGRICULTURE/BUSINESS/COMPUTER SCIENCE/EDUCATION/GOVERNMENT/HOMEMAKER/MEDICAL/MILITARY/NOT EMPLOYED/RETIRED/STUDENT/OTHER - infer from what the employer does",
+    "primaryOccupationOther": "string - Required if primaryOccupation is OTHER, omit otherwise",
+    "presentEmployer": {  // Object - Employer where applicant CURRENTLY works (at time of DS-160 submission), NOT the employer they are applying to. Even if same company (renewal/transfer), use CURRENT employer. NOTE: for renewals, the current employer and the one that the person is applying to may be the same since its a RENEWAL. CRITICAL FOR RENEWALS: MAKE SURE THAT CURRENT EMPLOYER IS THE MOST UP TO DATE CURRENT EMPLOYER FROM THE VISA RENEWAL WORKSHEET, NOT FROM THE ORIGINAL DS160 WORKSHEET
+      "name": "string or omit",
+      "address": {
+        "street1": "string or omit - MUST use periods for abbreviations: 'W.' (not 'W'), 'Blvd.' (not 'BLVD'), 'St.', 'Ave.'",
+        "street2": "string or omit - If source has '#', convert to 'STE.' for business or 'APT.' for residential",
+        "city": "string or omit - Remove -SHI suffix. TOKYO: Use ward name WITH -ku",
+        "state": "string or omit - FULL NAME ONLY: 'California' (not 'CA'), 'New York' (not 'NY')",
+        "postalCode": "string or omit",
+        "country": "string or omit - 🚨 VERIFY: Country must match address. US city/state/zip (Los Angeles, California, 90064) → 'USA'. Japanese city (-KU suffix, XXX-XXXX postal like 100-0005) → 'JPN'. If mismatch, RE-CHECK and correct."
+      },
+      "phone": "string or omit - No dashes/spaces/parens. US: +1 prefix (e.g., +13107835484). Japan: +81, drop leading 0 (e.g., +819012345678). Other: + with country code",
+      "startDate": "DD-MMM-YYYY or N/A",
+      "monthlyIncome": "string or omit - round to nearest whole number",
+      "duties": "string - 3-5 sentences derived from support letter or employment documents",
+      "supervisorSurname": "string or omit",
+      "supervisorGivenName": "string or omit",
+      "jobTitle": "string or omit - job title ONLY do not include description"
+    },
+    "previousEmployers": [],  // ⚠️ CRITICAL: ONLY include employers whose END DATE is within 5 years of TODAY (see TODAY'S DATE above). Calculate: (current year - 5) = cutoff year. If employer ended BEFORE the cutoff year, DO NOT INCLUDE IT - leave array EMPTY []. Empty array = "No" to "Were you previously employed within 5 years?" Array: {name, address, phone, startDate, endDate, monthlyIncome, duties, supervisorSurname, supervisorGivenName, jobTitle}. Max 2, sort by start date.
+    "education": {
+      "institutions": []  // Array: {name: "", address: {street1: "", street2: "", city: "", state: "", postalCode: "", country: ""}, courseOfStudy: "", fromDate: "DD-MMM-YYYY", toDate: "DD-MMM-YYYY"} - CRITICAL: Extract ALL education institutions from worksheet (high school, college, grad school, etc.). Sort by start date OLDEST FIRST (junior high → high school → college → grad school). For study abroad periods, sort by End Date. See Section 9 for details
+    },
+    "languages": [],  // Array of language names
+    "clanTribe": {
+      "belongsToClan": false,
+      "clanName": "string or omit"
+    },
+    "countriesVisited": {
+      "hasVisited": false,
+      "countries": []  // Array of country codes - AUTO-INCLUDE "USA" if previousTravel.hasBeenToUS is true or previousTravel.visits has any entries, even if worksheet doesn't list it (applicants often omit USA thinking "other countries" excludes it)
+    },
+    "organizationMembership": {
+      "hasMembership": false,
+      "organizations": []  // Array of organization names
+    },
+    "specializedSkills": {
+      "hasSkills": false,
+      "explanation": "string or omit"
+    },
+    "militaryService": {
+      "hasServed": false,
+      "details": []  // Array: {country: "3-letter code", branch: "string", rank: "string", specialty: "string", startDate: "DD-MMM-YYYY", endDate: "DD-MMM-YYYY"}
+    },
+    "insurgentOrganization": {
+      "hasInvolvement": false,
+      "explanation": "string or omit"
+    }
+  },
+
+  "security": {
+    "part1": {
+      "disease": false,
+      "diseaseExplain": "string",
+      "disorder": false,
+      "disorderExplain": "string",
+      "drugUser": false,
+      "drugUserExplain": "string"
+    },
+    "part2": {
+      "arrested": false,
+      "arrestedExplain": "string",
+      "controlledSubstances": false,
+      "prostitution": false,
+      "moneyLaundering": false,
+      "humanTrafficking": false,
+      "assistedTrafficking": false,
+      "traffickingRelated": false
+    },
+    "part3": {
+      "illegalActivity": false,
+      "terroristActivity": false,
+      "terroristSupport": false,
+      "terroristOrg": false,
+      "terroristRelated": false,
+      "genocide": false,
+      "torture": false,
+      "extrajudicialViolence": false,
+      "childSoldier": false,
+      "religiousFreedom": false,
+      "populationControls": false,
+      "organTransplant": false
+    },
+    "part4": {
+      "immigrationFraud": false,
+      "failedToAttend": false,
+      "visaViolation": false,
+      "visaViolationExplain": "string - Include dates, duration, and circumstances of overstay",
+      "removalHearing": false,
+      "deportation": false,
+      "deportationExplain": "string"
+    },
+    "part5": {
+      "childCustody": false,
+      "votingViolation": false,
+      "renounceExpenses": false
+    }
+  },
+
+  "temporaryWork": {  // Object - Always include this section even if visa type not specified
+    "petitionNumber": "string - Required for all temporary work visa applications",
+    "petitionerName": "string",
+    "intendedEmployer": {
+      "name": "string",
+      "address1": "string",
+      "address2": "string",
+      "city": "string",
+      "state": "2-letter state code",
+      "zipCode": "string",
+      "phone": "string - No dashes/spaces/parens. US: +1 prefix (e.g., +13107835484). Japan: +81, drop leading 0 (e.g., +819012345678). Other: + with country code"
+    },
+    "monthlyIncome": "string - Monthly amount, not yearly - round to nearest whole number"
+  },
+
+  "crewVisa": {  // Object - Only for C-1/D visa types
+    "jobTitle": "string",
+    "vesselCompanyName": "string",
+    "companyPhone": "string - No dashes/spaces/parens. US: +1 prefix (e.g., +13107835484). Japan: +81, drop leading 0 (e.g., +819012345678). Other: + with country code",
+    "positionThroughAgency": false,
+    "agencyInfo": {
+      "name": "string",
+      "address": "string",
+      "phone": "string - No dashes/spaces/parens. US: +1 prefix (e.g., +13107835484). Japan: +81, drop leading 0 (e.g., +819012345678). Other: + with country code"
+    },
+    "vesselWork": false
+  },
+
+  // E-VISA SECTIONS - MANDATORY REQUIREMENT FOR E-1/E-2 VISA APPLICATIONS
+  //
+  // 🚨 CRITICAL: If visa type is E-1 or E-2 (from wizard selection or user message):
+  //    1. You MUST include E-visa sections in the JSON output
+  //    2. You MUST attempt to fill as many fields as possible from available documents
+  //    3. Fill what you can find, leave rest as null/empty - but INCLUDE the sections
+  //    4. DO NOT skip E-visa sections entirely
+  //    5. DO NOT say "I need more information" without attempting to extract first
+  //
+  // Minimum REQUIRED sections (extract from DS-160 + worksheet):
+  //   ✅ evisaClassification (visa type, treaty country, principal applicant)
+  //   ✅ evisaApplicationContact (attorney info from DS-160 location page)
+  //   ✅ evisaApplicantPosition (present position duties, employer, education)
+  //   ✅ evisaApplicantUSPosition (US position title, duties, salary)
+  //
+  // Additional sections to attempt (fill if data available):
+  //   ⚠️ evisaBusiness (company name, address, phone from DS-160)
+  //   ⚠️ evisaForeignBusiness (parent company from work history)
+  //   ⚠️ evisaEmployee (overlaps with applicant position)
+  //
+  // Sections requiring DS-156E/business docs (include but may be mostly null):
+  //   ❌ evisaOwnership, evisaFinanceTrade, evisaEmployeeCounts, evisaUSPersonnel
+  //   ❌ evisaInvestment (E-2), evisaTrade (E-1), evisaFinancial
+  //
+  // Worksheet-Fillable Fields: evisaClassification, evisaApplicationContact, evisaApplicantPosition
+  // User will provide: visa type (E1/E2), principal applicant status (true/false), applicant type (M/E/S)
+  // Extract other fields from DS-160, worksheet, and any provided DS-156E/business documents
+
+  "evisaClassification": {
+    "visaType": "E1 or E2 - User will specify in chat",
+    "treatyCountry": "3-letter country code - Extract from personal.nationality (e.g., JPN for Japanese nationals)",
+    "principalApplicant": "true/false - User will specify in chat (true=main applicant, false=spouse/child dependent)",
+    "principalName": {
+      "surname": "string - Name of the principal treaty trader/investor. If principalApplicant=true, use personal.surname. If principalApplicant=false (spouse/child dependent), extract the principal applicant's surname from DS-156E Section 15 or worksheet.",
+      "givenName": "string - Name of the principal treaty trader/investor. If principalApplicant=true, use personal.givenName. If principalApplicant=false (spouse/child dependent), extract the principal applicant's given name from DS-156E Section 15 or worksheet."
+    }
+  },
+
+  "evisaBusiness": { //
+    "businessName": "string",
+    "registrationNumber": "string - Company registration number. Default: 'DOES NOT APPLY'. Extract from company documents if available.",
+    "businessType": "S",
+    "businessTypeOther": "string",
+    "incorporationDate": "DD-MMM-YYYY",
+    "incorporationCity": "string",
+    "incorporationState": "2-letter code",
+    "incorporationCountry": "USA",
+    "businessAddress": {
+      "street1": "string",
+      "street2": "string",
+      "city": "string",
+      "state": "string",
+      "postalCode": "string",
+      "country": "3-letter country code - 🚨 VERIFY: This is the US business address. If address shows US city/state/zip → 'USA'. If you wrote 'JPN' but address is American, fix to 'USA'."
+    },
+    "businessPhone": "string - No dashes/spaces/parens. US: +1 prefix (e.g., +13107835484). Japan: +81, drop leading 0 (e.g., +819012345678). Other: + with country code",
+    "businessFax": "string",
+    "businessEmail": "string",
+    "businessWebsite": "string",
+    "numberOfEmployees": "string",
+    "annualRevenue": "string",
+    "businessActivities": "string",
+    "percentageForeignOwnership": "string",
+    "stockExchangeListed": false,
+    "stockExchangeName": "string",
+    "offices": [
+      {
+        "type": "H",
+        "typeOther": "string",
+        "name": "string",
+        "address": {
+          "street1": "string",
+          "street2": "string",
+          "city": "string",
+          "state": "string",
+          "stateNA": false,
+          "postalCode": "string",
+          "postalCodeNA": false,
+          "country": "3-letter country code"
+        }
+      }
+    ]
+  },
+
+  "evisaApplicationContact": {
+    "officer": {  // Object - Responsible officer of the U.S. company who signs the application. Extract from worksheet question asking "Who is the signer of this application (responsible officer of the U.S. company)?" (e.g., Question 116, Question 90). If DS-156E Section 26 is available, cross-reference with that. This field may be left blank if not provided in documents.
+      "surname":  "string - Surname of the responsible/signing officer of the U.S. company (from worksheet question, or DS-156E Section 26 if available)",
+      "givenName":  "string - Given name of the responsible/signing officer of the U.S. company (from worksheet question, or DS-156E Section 26 if available)",
+      "position": "string - Title/position of the signing officer (from worksheet or DS-156E Section 26) (e.g., 'Managing Director, Human Resources', 'CEO', 'President')"
+    },
+    "contact": {  // Object - Preparer of form (attorney/paralegal) - use attorney info from E-visa Preparer Information section 
+      "surname": "string - Attorney surname (e.g., DOE)",
+      "givenName": "string - Attorney given name (e.g., JANE)",
+    },
+    "address": {  // Object - USE YOUR FIRM'S ADDRESS (preparer is always the firm)
+      "street1": "string - Use: 1000 EXAMPLE BLVD.",
+      "street2": "string - Use: STE. 200",
+      "city": "string - Use: LOS ANGELES",
+      "state": "string - Use: California",
+      "stateNA": false,
+      "postalCode": "string - Use: 90025",
+      "postalCodeNA": false,
+      "country": "string - Use: USA"
+    },
+    "phone": "string - No dashes/spaces/parens. US: +1 prefix (e.g., +13107835484). Japan: +81, drop leading 0 (e.g., +819012345678). Other: + with country code",
+    "fax": "string",
+    "faxNA": false,
+    "email": "string",
+    "emailNA": false
+  },
+
+  "evisaOwnership": {
+    "owners": [],  // Array: {name: "", nationality: "3-letter code", percentageOwnership: "", position: ""} - Extract ALL business owners from DS-156E Section 11
+    "majorityOwnedByTreatyCountry": true,
+    "ownershipStructure": "string"
+  },
+
+  "evisaFinanceTrade": {
+    "yearType": "F or C",
+    "yearType2": "F or C",
+    "assetsType": "C or H",
+    "financialYear": "YYYY",
+    "totalAssets": "string",
+    "totalLiabilities": "string",
+    "ownerEquity": "string",
+    "operatingIncomeBeforeTax": "string",
+    "operatingIncomeAfterTax": "string",
+    "grossInternationalTradeYear": "YYYY",
+    "treatyCountryImports": "string",
+    "treatyCountryImportTransactions": "string",
+    "treatyCountryExports": "string",
+    "treatyCountryExportTransactions": "string",
+    "thirdCountryImports": "string",
+    "thirdCountryImportTransactions": "string",
+    "thirdCountryExports": "string",
+    "thirdCountryExportTransactions": "string",
+    "domesticProductionValue": "string",
+    "domesticProductionTransactions": "string",
+
+    "financialStatement": {
+      "cash": "string",
+      "receivables": "string",
+      "inventory": "string",
+      "otherCurrentAssets": "string",
+      "land": "string",
+      "building": "string",
+      "machinery": "string",
+      "otherPropertyAssets": "string",
+      "liabilities": "string",
+      "debt": "string",
+      "revenues": "string",
+      "costs": "string",
+      "income": "string",
+      "tax": "string"
+    },
+
+    "tradeInformation": {
+      "goodsSoldValue": "string",
+      "exportedValue": "string",
+      "principalTradeService": "string",
+      "servicesToUSA": "string",
+      "importsFromUS": "string",
+      "importsFromOther": "string",
+      "exportsToUS": "string",
+      "exportsToOther": "string",
+      "domesticProductionTransactions": "string"
+    }
+  },
+
+  "evisaEmployeeCounts": {
+    "yearType": "F or C",
+    "treatyNationals": {
+      "managerial": {"thisYear": "string", "nextYear": "string"},
+      "specialized": {"thisYear": "string", "nextYear": "string"},
+      "other": {"thisYear": "string", "nextYear": "string"}
+    },
+    "usCitizensLPR": {
+      "managerial": {"thisYear": "string", "nextYear": "string"},
+      "specialized": {"thisYear": "string", "nextYear": "string"},
+      "other": {"thisYear": "string", "nextYear": "string"}
+    },
+    "thirdCountryNationals": {
+      "managerial": {"thisYear": "string", "nextYear": "string"},
+      "specialized": {"thisYear": "string", "nextYear": "string"},
+      "other": {"thisYear": "string", "nextYear": "string"}
+    }
+  },
+
+  "evisaUSPersonnel": {
+    "personnel": [
+      {
+        "surname": "string",
+        "givenName": "string",
+        "position": "string",
+        "division": "string",
+        "nationality": "3-letter country code",
+        "usStatus": "string",
+        "usStatusOther": "string",
+        "visaType": "string",
+        "visaIssueDate": "DD-MMM-YYYY",
+        "visaIssuePlace": "string",
+        "alienNumber": "string",
+        "alienNumberUnknown": false
+      }
+    ]
+  },
+
+  "evisaApplicantPosition": {
+    "applicantType": "M", // P=Principal/Owner/Investor/Trader, S=Supervisor, L=Specialist, M=Manager, E=Executive, O=Other - User will specify in chat. WARNING: 'S' = Supervisor (NOT Specialist). Specialist = 'L'.
+    "presentPosition": "string - Extract FULL TEXT from DS-156E Section 18. FALLBACK: If not available, use presentEmployer.duties (3-5 sentences)",
+    "employerName": "string - Extract from presentEmployer.name",
+    "yearsWithEmployer": "string - Calculate from presentEmployer.startDate to current date (e.g., '27' for April 1998 to May 2025)",
+    "employerAddress": {
+      "street1": "string - From presentEmployer.address.street1",
+      "street2": "string or omit - From presentEmployer.address.street2",
+      "city": "string - From presentEmployer.address.city",
+      "state": "string - From presentEmployer.address.state",
+      "postalCode": "string - From presentEmployer.address.postalCode",
+      "country": "3-letter code - From presentEmployer.address.country"
+    },
+    "education": {
+      "school": "string - From education.institutions[most recent].name",
+      "degree": "string - Infer from level (High School Diploma, Bachelor's Degree, Master's Degree, etc.)",
+      "major": "string - From education.institutions[most recent].courseOfStudy",
+      "year": "string - Extract year from toDate (e.g., '1998' from '03-MAR-1998')"
+    },
+    "hasOtherEducation": false, // ONLY true if applicant has specialized/vocational education (NOT regular middle/high school). Include: vocational schools, professional certifications, technical training, specialized courses related to job skills.
+    "otherEducationExplanation": "string - List ONLY specialized/vocational schools or professional training. Do NOT include regular middle school or high school."
+  },
+
+  "evisaApplicantUSPosition": {
+    "title": "string",
+    "duties": "string (FULL TEXT from DS-156E Section 23)",
+    "salary": "string",
+    "benefits": "string",
+    "hasImmediateSubordinates": true,
+    "immediateSubordinates": [],  // Array of subordinate names from DS-156E Section 15
+    "isReplacingWorker": false,
+    "replacedWorker": {
+      "name": "string or omit",
+      "visaType": "string or omit"
+    },
+    "willIncreaseStaff": false,
+    "continuationOfEmployment": true
+  },
+
+  "evisaEmployee": {
+    "positionTitle": "string",
+    "dutiesDescription": "string",
+    "startDate": "DD-MMM-YYYY",
+    "yearsExperience": "string",
+    "salary": "string",
+    "educationLevel": "string",
+    "fieldOfStudy": "string",
+    "specialQualifications": "string",
+    "previousUSEmployment": false,
+    "previousEmployer": "string",
+    "previousPosition": "string",
+    "previousDates": "string"
+  },
+
+  "evisaInvestment": {
+    "investmentType": "E",
+    "fairMarketValue": "string",
+    "financialYear": "YYYY",
+    "yearType": "C",
+    "cashInitial": "string",
+    "cashTotal": "string",
+    "inventoryInitial": "string",
+    "inventoryTotal": "string",
+    "equipmentInitial": "string",
+    "equipmentTotal": "string",
+    "propertyInitial": "string",
+    "propertyTotal": "string",
+    "otherInitial": "string",
+    "otherTotal": "string",
+    "sourceOfFunds": "C",
+    "fundsFrom": "P",
+    "fundsAmount": "string",
+    "hasWireTransfers": true,
+    "hasBankStatements": true,
+    "hasPromissoryNote": false,
+    "hasOtherDocs": false
+  },
+
+  "evisaForeignBusiness": {
+    "hasForeignBusiness": true,
+    "hasForeignEntity": true,
+    "hasForeignIndividualOwner": false,
+    "parentBusiness": {
+      "name": "string",
+      "address": {
+        "street1": "string",
+        "street2": "string",
+        "city": "string",
+        "state": "string",
+        "stateNA": false,
+        "postalCode": "string",
+        "postalCodeNA": false,
+        "country": "3-letter country code - 🚨 VERIFY: This is the FOREIGN parent company. Country should match treaty country (e.g., 'JPN' for Japanese parent). If address is Japanese but you wrote 'USA', fix to match treaty country."
+      },
+      "phone": "string - No dashes/spaces/parens. US: +1 prefix (e.g., +13107835484). Japan: +81, drop leading 0 (e.g., +819012345678). Other: + with country code",
+      "fax": "string"
+    },
+    "foreignEntities": [
+      {
+        "name": "string",
+        "nationality": "3-letter country code",
+        "ownershipPercentage": "string"
+      }
+    ],
+    "foreignOwners": [
+      {
+        "surname": "string",
+        "givenName": "string",
+        "status": "string",
+        "residenceCountry": "3-letter country code",
+        "nationality": "3-letter country code",
+        "ownershipPercentage": "string"
+      }
+    ]
+  },
+
+  "evisaFinancial": {
+    "currentAssets": "string",
+    "fixedAssets": "string",
+    "totalAssets": "string",
+    "currentLiabilities": "string",
+    "longTermLiabilities": "string",
+    "totalLiabilities": "string",
+    "ownerEquity": "string",
+    "netWorth": "string",
+    "grossIncome": "string",
+    "operatingIncomeBeforeTax": "string",
+    "operatingIncomeAfterTax": "string",
+    "netIncome": "string",
+    "taxYear": "string",
+    "financialYear": "string"
+  },
+
+  "evisaTrade": {
+    "goodsServices": "string",
+    "tradeWithUS": true,
+    "annualTradeVolume": "string",
+    "percentageTradeUS": "string",
+    "usCompanies": [
+      {
+        "name": "string",
+        "address": "string",
+        "relationship": "string"
+      }
+    ],
+    "importFromUS": false,
+    "exportToUS": false,
+    "importDescription": "string",
+    "exportDescription": "string"
+  }
+}
+</artifact>
+
+## DEFAULT VALUES WHEN NOT SPECIFIED:
+
+When documents don't provide specific information, use these defaults:
+
+(All default values have been embedded directly in field descriptions above)
+
+## PLACEHOLDER VALUES vs OMISSION STRATEGY:
+
+When information is not in documents:
+
+**Use Placeholders For:**
+- Required date fields: Use "01-JAN-2026" for intendedArrivalDate if not specified
+- Required numeric fields: Use "3" for lengthOfStayNumber if cannot infer from visa type
+- Required dropdown fields: Use context-appropriate defaults (see field descriptions)
+
+**OMIT Entirely (Do Not Use "N/A" or explanatory text):**
+- All false boolean fields
+- All explanation fields when corresponding boolean is false
+- All conditional fields when condition is not met (e.g., otherTypeExplanation when type is not OTHER)
+- Optional fields with no data
+- Entire security section if all values are false
+
+## COMPLETE EXAMPLE WITH COMPREHENSIVE SAMPLE DATA
+
+This example shows EVERY SINGLE FIELD populated with realistic sample data. Pay special attention to:
+- Example demonstrates all field types - omit entire sections if not applicable
+- Company names without punctuation
+- Phone numbers with proper formatting (US: +1 prefix, Japan: +81 drop leading 0)
+- Street addresses with building number first
+   - Secondary unit designators (APT. 701 format)
+- Japanese addresses with ward (-ku) in street, city/state without suffixes (-shi, -ken/-fu/-to), Tokyo wards as city names
+- Spouse maiden name format and place of birth fields
+- Proper formatting for all field types
+- Complete E-visa sections for E-2 application
+
+<artifact>
+{
+  "personal": {
+    "surname": "NAKAMURA",
+    "givenName": "Takeshi",
+    "fullNameNative": "中村武志",
+    "otherNames": [
+      {
+        "surname": "YAMAMOTO",
+        "givenName": "Takeshi"
+      }
+    ],
+    "gender": "MALE",
+    "maritalStatus": "MARRIED",
+    "dateOfBirth": "15-MAR-1978",
+    "birthCity": "MINATO",
+    "birthState": "TOKYO",
+    "birthCountry": "JPN",
+    "nationality": "JPN",
+    "otherNationalities": ["USA"],
+    "nationalId": "123456789012",
+    "usSocialSecurity": "123456789",
+    "usTaxId": "987654321"
+  },
+
+  "travel": {
+    "purposeOfTrip": "E",
+    "otherPurposeDetail": "E2-EX",
+    "purposeSpecify": "Treaty investor establishing US operations",
+    "petitionNumber": "ABC1234567890",
+    "principalApplicant": {
+      "surname": "NAKAMURA",
+      "givenName": "Takeshi",
+      "petitionNumber": "ABC1234567890",
+      "companyName": "NAKAMURA TRADING USA INC"
+    },
+    "principalVisaIssued": true,
+    "evisaPrincipal": {
+      "surname": "NAKAMURA",
+      "givenName": "Takeshi",
+      "dateOfBirth": "15-MAR-1978"
+    },
+    "specificTravelPlans": true,
+    "intendedArrivalDate": "15-APR-2024",
+    "arrivalFlightNumber": "NH006",
+    "arrivalCity": "Los Angeles",
+    "intendedDepartureDate": "15-APR-2027",
+    "departureFlightNumber": "NH005",
+    "departureCity": "Los Angeles",
+    "lengthOfStay": "5 years",
+    "lengthOfStayNumber": "5",
+    "lengthOfStayUnit": "Y",
+    "usStreetAddress": "1234 Wilshire Blvd.",
+    "usStreetAddress2": "STE. 567",
+    "usCity": "Los Angeles",
+    "usState": "California",
+    "usZipCode": "90017",
+    "tripPayer": "COMPANY",
+    "payerInfo": {
+      "surname": "SUZUKI",
+      "givenName": "Hiroshi",
+      "phone": "+81354567890",
+      "email": "hsuzuki@nakamuratrading.co.jp",
+      "relationship": "Business partner",
+      "sameAddress": false,
+      "street1": "3-15-2 SHIBUYA",
+      "street2": "FL. 8",
+      "city": "SHIBUYA-KU",
+      "state": "TOKYO",
+      "postalCode": "150-0002",
+      "country": "JPN"
+    },
+    "companyInfo": {
+      "name": "NAKAMURA TRADING USA INC",
+      "relationship": "Owned company",
+      "street1": "1234 Wilshire Blvd.",
+      "street2": "STE. 567",
+      "city": "Los Angeles",
+      "state": "California",
+      "zipCode": "90017",
+      "country": "USA"
+    }
+  },
+
+  "travelCompanions": [
+    {
+      "surname": "NAKAMURA",
+      "givenName": "Yuki",
+      "relationship": "Spouse"
+    },
+    {
+      "surname": "NAKAMURA",
+      "givenName": "Kenta",
+      "relationship": "Child"
+    }
+  ],
+
+  "travelGroup": {
+    "traveling": true,
+    "name": "Japan Business Delegation 2024"
+  },
+
+  "previousTravel": {
+    "hasBeenToUS": true,
+    "visits": [
+      {
+        "arrivalDate": "10-JUN-2022",
+        "lengthOfStayNumber": "14",
+        "lengthOfStayUnit": "D"
+      },
+      {
+        "arrivalDate": "05-SEP-2023",
+        "lengthOfStayNumber": "21",
+        "lengthOfStayUnit": "D"
+      }
+    ],
+    "driverLicense": {
+      "hasLicense": true,
+      "licenses": [
+        {
+          "state": "California",
+          "number": "D1234567"
+        }
+      ]
+    },
+    "previousVisa": {
+      "hasVisa": true,
+      "issueDate": "15-MAY-2022",
+      "visaNumber": "123456789",
+      "sameType": false,
+      "sameCountry": true,
+      "tenPrinted": true
+    }
+  },
+
+  "contact": {
+    "homeStreet": "2-15-8 ROPPONGI",
+    "homeApt": "APT. 1205",
+    "homeCity": "MINATO-KU",
+    "homeState": "TOKYO",
+    "homePostalCode": "106-0032",
+    "homeCountry": "JPN",
+    "mailingAddressSameAsHome": false,
+    "mailingAddress": {
+      "street": "1-3-5 MARUNOUCHI",
+      "apt": "FL. 20",
+      "city": "CHIYODA-KU",
+      "state": "TOKYO",
+      "postalCode": "100-0005",
+      "country": "JPN"
+    },
+    "homePhone": "+81354567890",
+    "secondaryPhone": "+81901234567",
+    "workPhone": "+81332211234",
+    "email": "tnakamura@nakamuratrading.co.jp",
+    "socialMedia": [
+      {
+        "platform": "LINKEDIN",
+        "handle": "takeshi-nakamura-business"
+      },
+      {
+        "platform": "TWITTER",
+        "handle": "tnakamura_tokyo"
+      }
+    ],
+    "additionalEmails": [
+      "takeshi.personal@gmail.com",
+      "t.nakamura@example.com"
+    ]
+  },
+
+  "usContact": {
+    "contactPerson": {
+      "surname": "JOHNSON",
+      "givenName": "Michael"
+    },
+    "organizationName": "CALIFORNIA BUSINESS PARTNERS LLC",
+    "relationship": "Business partner and legal representative",
+    "address": {
+      "street1": "5678 Century Blvd.",
+      "street2": "FL. 25",
+      "city": "Los Angeles",
+      "state": "California",
+      "zipCode": "90045"
+    },
+    "phone": "+13107654321",
+    "email": "mjohnson@californiabusiness.com"
+  },
+
+  "passport": {
+    "type": "REGULAR",
+    "number": "TK9876543",
+    "bookNumber": "BK123456",
+    "issuingAuthority": "JPN",
+    "issueCountry": "JPN",
+    "issueCity": "Tokyo",
+    "issueState": "Tokyo",
+    "issueDate": "20-JAN-2020",
+    "expirationDate": "20-JAN-2030",
+    "lostPassport": {
+      "hasLost": true,
+      "number": "TK1111111",
+      "country": "JPN",
+      "explanation": "Previous passport was lost during travel in 2019, reported to Japanese consulate and replaced"
+    }
+  },
+
+  "family": {
+    "father": {
+      "surname": "NAKAMURA",
+      "givenName": "Hiroshi",
+      "dateOfBirth": "10-APR-1945",
+      "inUS": false,
+      "status": "Japanese citizen residing in Japan"
+    },
+    "mother": {
+      "surname": "NAKAMURA",
+      "givenName": "Sachiko",
+      "dateOfBirth": "25-JUN-1950",
+      "inUS": false,
+      "status": "Japanese citizen residing in Japan"
+    },
+    "hasImmediateRelativesInUS": true,
+    "relativesInUS": [
+      {
+        "surname": "NAKAMURA",
+        "givenName": "Ken",
+        "relationship": "Cousin",
+        "status": "US Permanent Resident"
+      },
+      {
+        "surname": "TANAKA",
+        "givenName": "Mary",
+        "relationship": "Sister-in-law",
+        "status": "US Citizen"
+      }
+    ],
+    "spouse": {
+      "surname": "NAKAMURA MAIDEN NAME TANAKA",
+      "givenName": "Yuki",
+      "dateOfBirth": "22-NOV-1982",
+      "nationality": "JPN",
+      "city": "Osaka",
+      "birthState": "Osaka",
+      "country": "JPN",
+      "addressType": "SAME_AS_HOME"
+    }
+  },
+
+  "workEducation": {
+    "primaryOccupation": "BUSINESS",
+    "presentEmployer": {
+      "name": "NAKAMURA TRADING CO LTD",
+      "address": {
+        "street1": "1-3-5 MARUNOUCHI",
+        "street2": "FL. 20",
+        "city": "CHIYODA-KU",
+        "state": "TOKYO",
+        "postalCode": "100-0005",
+        "country": "JPN"
+      },
+      "phone": "+81332211234",
+      "startDate": "01-APR-2005",
+      "monthlyIncome": "2500000",
+      "duties": "Chief Executive Officer responsible for overall company strategy, international expansion, and US market development. Manages 150 employees across 5 departments including import-export operations, logistics, and business development.",
+      "supervisorSurname": "TANAKA",
+      "supervisorGivenName": "Hiroshi",
+      "jobTitle": "Chief Executive Officer"
+    },
+    "previousEmployers": [
+      {
+        "name": "MITSUBISHI CORPORATION",
+        "address": {
+          "street1": "3-1-1 MARUNOUCHI",
+          "street2": "",
+          "city": "CHIYODA-KU",
+          "state": "TOKYO",
+          "postalCode": "100-8086",
+          "country": "JPN"
+        },
+        "phone": "+81332101111",
+        "startDate": "01-APR-2000",
+        "endDate": "31-MAR-2005",
+        "monthlyIncome": "800000",
+        "duties": "Senior Manager in International Business Division, handled US market analysis and partnership development",
+        "supervisorSurname": "SUZUKI",
+        "supervisorGivenName": "Kenji",
+        "jobTitle": "Senior Manager"
+      }
+    ],
+    "education": {
+      "institutions": [
+        {
+          "name": "UNIVERSITY OF TOKYO",
+          "address": {
+            "street1": "7-3-1 HONGO",
+            "city": "BUNKYO-KU",
+            "state": "TOKYO",
+            "postalCode": "113-0033",
+            "country": "JPN"
+          },
+          "courseOfStudy": "Economics",
+          "fromDate": "01-APR-1996",
+          "toDate": "31-MAR-2000"
+        }
+      ]
+    },
+    "languages": ["Japanese", "English", "Mandarin Chinese"],
+    "countriesVisited": {
+      "hasVisited": true,
+      "countries": ["USA", "CHN", "KOR", "THA", "SGP"]
+    },
+    "organizationMembership": {
+      "hasMembership": true,
+      "organizations": [
+        "Japan Business Federation",
+        "Tokyo Chamber of Commerce and Industry"
+      ]
+    }
+  },
+
+  "temporaryWork": {
+    "petitionNumber": "ABC1234567890",
+    "petitionerName": "NAKAMURA TRADING USA INC",
+    "intendedEmployer": {
+      "name": "NAKAMURA TRADING USA INC",
+      "address1": "1234 Wilshire Blvd.",
+      "address2": "STE. 567",
+      "city": "Los Angeles",
+      "state": "California",
+      "zipCode": "90017",
+      "phone": "+13107654321"
+    },
+    "monthlyIncome": "25000"
+  },
+
+  "evisaClassification": {
+    "visaType": "E2",
+    "treatyCountry": "JPN",
+    "principalApplicant": true,
+    "principalName": {
+      "surname": "NAKAMURA",
+      "givenName": "Takeshi"
+    }
+  },
+
+  "evisaBusiness": {
+    "businessName": "NAKAMURA TRADING USA INC",
+    "registrationNumber": "DOES NOT APPLY",
+    "businessType": "S",
+    "businessTypeOther": "Import-export and wholesale trading company",
+    "incorporationDate": "15-JAN-2024",
+    "incorporationCity": "Los Angeles",
+    "incorporationState": "California",
+    "incorporationCountry": "USA",
+    "businessAddress": {
+      "street1": "1234 Wilshire Blvd.",
+      "street2": "STE. 567",
+      "city": "Los Angeles",
+      "state": "California",
+      "postalCode": "90017",
+      "country": "USA"
+    },
+    "businessPhone": "+13107654321",
+    "businessFax": "+13107654322",
+    "businessEmail": "info@nakamuratrading.com",
+    "businessWebsite": "www.nakamuratrading.com",
+    "numberOfEmployees": "25",
+    "annualRevenue": "15000000",
+    "businessActivities": "Import and distribution of Japanese consumer goods",
+    "percentageForeignOwnership": "75"
+  },
+
+  "evisaApplicationContact": {
+    "officer": {
+      "surname": "NAKAMURA",
+      "givenName": "TAKESHI",
+      "position": "CEO"
+    },
+    "contact": {
+      "surname": "DOE",
+      "givenName": "JANE"
+    },
+    "address": {
+      "street1": "1000 EXAMPLE BLVD.",
+      "street2": "STE. 200",
+      "city": "LOS ANGELES",
+      "state": "California",
+      "postalCode": "90025",
+      "country": "USA"
+    },
+    "phone": "+13105550100",
+    "fax": "+13105550101",
+    "email": "attorney@example-firm.net"
+  },
+
+  "evisaOwnership": {
+    "owners": [
+      {
+        "name": "NAKAMURA TAKESHI",
+        "nationality": "JPN",
+        "percentageOwnership": "75",
+        "position": "Chief Executive Officer"
+      }
+    ],
+    "majorityOwnedByTreatyCountry": true,
+    "ownershipStructure": "75% owned by Japanese national Takeshi Nakamura"
+  }
+}
+</artifact>
+
+## ADDITIONAL RULES:
+
+- Do not fabricate information, but use logical inference based on source documents and visa knowledge
+- Always include temporaryWork section for work-based visas (H/L/O/P/Q/R)
+- Extract what you can from documents, mark missing required fields clearly
+- Omit security section entirely if all answers are false
+- Use exact passport name formatting (typically all caps)
+- Numeric values as strings (e.g., "250" not 250)
+- Keep empty arrays [] when no items exist
+- Keep false for boolean fields
+- The extension automatically defaults missing boolean fields to false
+- Therefore, omit all false boolean fields to reduce JSON size
+- Only include fields that are true or have actual values
+
+### Conditional Requirements:
+- If maritalStatus="MARRIED": spouse information required
+- If hasBeenToUS=true: previous visit details required
+- If primaryOccupation!="NOT EMPLOYED": employer details required
+- If primaryOccupation="OTHER": primaryOccupationOther required (OMIT if primaryOccupation is any other value)
+- If passport.type="OTHER": otherTypeExplanation required (OMIT if type is REGULAR/OFFICIAL/DIPLOMATIC)
+- If boolean field is false: OMIT corresponding explanation field (e.g., omit lostExplanation when lost=false)
+
+### E-visa Requirements (E-1/E-2) - MANDATORY:
+
+🚨 **CRITICAL VALIDATION CHECK**: For E-1 or E-2 visa applications, you MUST verify:
+   ✅ At least 4 E-visa sections are present in the JSON
+   ✅ evisaClassification is populated with visa type and treaty country
+   ✅ evisaApplicationContact has attorney information
+   ✅ evisaApplicantPosition has present position and education
+   ✅ evisaApplicantUSPosition has US job title and duties
+
+If you cannot find data for a field, use null or empty string, but DO NOT omit the section entirely.
+
+**Data Extraction Priority:**
+1. Extract from DS-160 E-visa page (applicant type, position duties, salary, education)
+2. Extract from worksheet (contact info, employment dates, salary updates)
+3. Extract from DS-156E form if provided (ownership, investment, trade, employee counts)
+4. Extract from business documents if provided (incorporation, financials)
+
+**Output all E-visa sections even if incomplete:**
+- Include all evisa sections from DS-156E form
+- Extract full text from DS-156E Sections 18 and 23 (don't summarize)
+- Include evisaApplicationContact from DS-156E Sections 26 and 27
+- Include evisaInvestment for E-2 visas (even if mostly null)
+- Include evisaTrade for E-1 visas only (even if mostly null)
+
+---
+
+---
+
+## 🚨 FINAL REMINDER: ARTIFACT TAGS ARE MANDATORY
+
+Your response MUST be structured EXACTLY like this:
+
+<artifact>
+{
+  "personal": {
+    "surname": "SMITH",
+    "givenName": "JOHN",
+    ... (all DS-160 fields)
+  }
+}
+</artifact>
+
+**DO NOT:**
+- ❌ Forget the opening `<artifact>` tag
+- ❌ Forget the closing `</artifact>` tag
+- ❌ Put explanations before the opening tag
+- ❌ Put explanations inside the artifact tags
+
+**WHY:** The backend artifact detection logic requires BOTH tags to stream your JSON to the frontend. Without proper tags, the artifact panel will be blank and the user will think generation failed.
+
+Now analyze the uploaded documents and extract DS-160 information following ALL rules above, with PROPER ARTIFACT TAGS.
+
+<!-- END OF SCHEMA - If you don't see this line, use Read with offset to continue reading -->
+

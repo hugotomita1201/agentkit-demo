@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Copy, Code, Eye, FileText, Check } from 'lucide-react'
+import { Copy, Code, Eye, FileText, Check, Download } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
@@ -38,20 +38,38 @@ function tryParseJson(content) {
   }
 }
 
-function TypeBadge({ type }) {
+const FORM_TYPE_LABELS = {
+  'ds-160': 'DS-160',
+  'i-129s': 'I-129S',
+  'g-28': 'G-28',
+  'l1b-letter': 'L-1B Letter',
+  'case-report': 'Case Report',
+}
+
+function normalizeType(type) {
+  if (!type) return 'text'
+  if (type === 'application/json') return 'json'
+  if (type === 'text/markdown') return 'markdown'
+  return type
+}
+
+function TypeBadge({ type, formType }) {
   const colors = {
     json: { bg: 'rgba(59, 130, 246, 0.12)', text: '#93c5fd', border: 'rgba(59, 130, 246, 0.2)' },
     markdown: { bg: 'rgba(167, 139, 250, 0.12)', text: '#c4b5fd', border: 'rgba(167, 139, 250, 0.2)' },
     text: { bg: 'rgba(161, 161, 161, 0.12)', text: '#a1a1a1', border: 'rgba(161, 161, 161, 0.2)' },
     code: { bg: 'rgba(74, 222, 128, 0.12)', text: '#86efac', border: 'rgba(74, 222, 128, 0.2)' },
+    form: { bg: 'rgba(245, 158, 11, 0.12)', text: '#fcd34d', border: 'rgba(245, 158, 11, 0.2)' },
   }
-  const c = colors[type] || colors.text
+  const normalized = normalizeType(type)
+  const label = formType ? (FORM_TYPE_LABELS[formType] || formType) : normalized
+  const c = colors[formType ? 'form' : normalized] || colors.text
   return (
     <span
       className="text-[10px] px-1.5 py-0.5 rounded font-mono uppercase"
       style={{ background: c.bg, color: c.text, border: `1px solid ${c.border}` }}
     >
-      {type}
+      {label}
     </span>
   )
 }
@@ -59,6 +77,7 @@ function TypeBadge({ type }) {
 export default function ArtifactPanel({ artifact }) {
   const [viewMode, setViewMode] = useState('formatted')
   const [copied, setCopied] = useState(false)
+  const [exporting, setExporting] = useState(false)
 
   const handleCopy = async () => {
     if (!artifact) return
@@ -70,12 +89,45 @@ export default function ArtifactPanel({ artifact }) {
     setTimeout(() => setCopied(false), 2000)
   }
 
+  const handleExportDocx = async () => {
+    if (!artifact || exporting) return
+    setExporting(true)
+    try {
+      const res = await fetch('/api/export/docx', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: artifact.title,
+          content: typeof artifact.content === 'string'
+            ? artifact.content
+            : JSON.stringify(artifact.content, null, 2),
+        }),
+      })
+      if (!res.ok) throw new Error('Export failed')
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${(artifact.title || 'artifact').replace(/\s+/g, '_')}.docx`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      console.error('DOCX export error:', err)
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  const isFormArtifact = !!(artifact && artifact.formType)
+  const artifactTypeNorm = artifact ? normalizeType(artifact.type) : null
+  const isMarkdownArtifact = artifactTypeNorm === 'markdown'
+
   const renderFormatted = () => {
     if (!artifact) return null
     const { type, content } = artifact
 
     // Try JSON
-    if (type === 'json' || tryParseJson(content)) {
+    if (type === 'json' || type === 'application/json' || tryParseJson(content)) {
       const parsed = tryParseJson(content) || content
       const highlighted = syntaxHighlightJson(parsed)
       return (
@@ -87,7 +139,7 @@ export default function ArtifactPanel({ artifact }) {
     }
 
     // Markdown
-    if (type === 'markdown') {
+    if (type === 'markdown' || type === 'text/markdown') {
       return (
         <div className="prose-chat text-sm">
           <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
@@ -127,11 +179,24 @@ export default function ArtifactPanel({ artifact }) {
           <span className="text-xs font-medium" style={{ color: 'var(--vg-text-secondary)' }}>
             {artifact ? artifact.title : 'Artifacts'}
           </span>
-          {artifact && <TypeBadge type={artifact.type} />}
+          {artifact && <TypeBadge type={artifact.type} formType={artifact.formType} />}
         </div>
 
         {artifact && (
           <div className="flex items-center gap-1">
+            {/* DOCX export for markdown artifacts */}
+            {isMarkdownArtifact && (
+              <button
+                onClick={handleExportDocx}
+                disabled={exporting}
+                className="flex items-center gap-1 px-2 py-1 rounded-md text-[10px] transition-colors disabled:opacity-40"
+                style={{ color: 'var(--vg-text-tertiary)' }}
+                title="Generate DOCX"
+              >
+                <Download size={10} /> {exporting ? 'Exporting...' : 'DOCX'}
+              </button>
+            )}
+
             {/* View mode toggle */}
             <div
               className="flex rounded-md overflow-hidden text-[10px]"
@@ -172,6 +237,21 @@ export default function ArtifactPanel({ artifact }) {
           </div>
         )}
       </div>
+
+      {/* Form validation status bar */}
+      {isFormArtifact && (
+        <div
+          className="flex items-center gap-2 px-3 py-1.5 text-[10px] shrink-0"
+          style={{
+            background: 'rgba(74, 222, 128, 0.06)',
+            borderBottom: '1px solid rgba(74, 222, 128, 0.15)',
+            color: '#86efac',
+          }}
+        >
+          <Check size={10} />
+          <span>Form schema validated — {FORM_TYPE_LABELS[artifact.formType] || artifact.formType}</span>
+        </div>
+      )}
 
       {/* Content */}
       <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar px-3 py-3">

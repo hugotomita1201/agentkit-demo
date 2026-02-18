@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Send, Square, MessageSquare } from 'lucide-react'
+import { Send, Square, MessageSquare, FileText, FileSpreadsheet, ClipboardCheck } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { streamChat } from '../lib/api'
@@ -17,6 +17,7 @@ export default function ChatDemoPage() {
   const messagesEndRef = useRef(null)
   const textareaRef = useRef(null)
   const abortRef = useRef(false)
+  const artifactBufferRef = useRef(null)
 
   // Auto-scroll messages
   useEffect(() => {
@@ -40,25 +41,30 @@ export default function ChatDemoPage() {
         setSessionId(event.sessionId)
         break
 
-      case 'text_delta':
+      case 'text_delta': {
+        const deltaText = event.content || event.text || ''
         setMessages(prev => {
           const last = prev[prev.length - 1]
           if (last && last.role === 'assistant' && last.streaming) {
-            return [...prev.slice(0, -1), { ...last, content: last.content + event.text }]
+            return [...prev.slice(0, -1), { ...last, content: last.content + deltaText }]
           }
-          return [...prev, { role: 'assistant', content: event.text, timestamp, streaming: true }]
+          return [...prev, { role: 'assistant', content: deltaText, timestamp, streaming: true }]
         })
         break
+      }
 
-      case 'thinking_delta':
+      case 'thinking':
+      case 'thinking_delta': {
+        const thinkText = event.content || event.text || ''
         setEvents(prev => {
           const last = prev[prev.length - 1]
-          if (last && last.type === 'thinking_delta' && last.streaming) {
-            return [...prev.slice(0, -1), { ...last, text: last.text + event.text }]
+          if (last && (last.type === 'thinking_delta' || last.type === 'thinking') && last.streaming) {
+            return [...prev.slice(0, -1), { ...last, text: last.text + thinkText }]
           }
-          return [...prev, { type: 'thinking_delta', text: event.text, timestamp, streaming: true }]
+          return [...prev, { type: 'thinking_delta', text: thinkText, timestamp, streaming: true }]
         })
         break
+      }
 
       case 'tool_executing':
         setEvents(prev => [...prev, {
@@ -123,7 +129,37 @@ export default function ChatDemoPage() {
         })
         break
 
+      case 'artifact_start':
+        artifactBufferRef.current = {
+          title: event.title || 'Artifact',
+          type: event.artifactType || event.contentType || 'text',
+          formType: event.formType || null,
+          content: '',
+        }
+        setArtifact({ ...artifactBufferRef.current })
+        break
+
+      case 'artifact_delta':
+        if (artifactBufferRef.current) {
+          artifactBufferRef.current.content += event.text || event.content || ''
+          setArtifact({ ...artifactBufferRef.current })
+        }
+        break
+
+      case 'artifact_end':
+        if (artifactBufferRef.current) {
+          // Use final content from event if provided, otherwise use accumulated buffer
+          if (event.content) {
+            artifactBufferRef.current.content = event.content
+            setArtifact({ ...artifactBufferRef.current })
+          }
+          artifactBufferRef.current = null
+        }
+        break
+
       case 'done':
+      case 'complete':
+      case 'end':
         setMessages(prev => {
           const last = prev[prev.length - 1]
           if (last && last.streaming) {
@@ -201,11 +237,34 @@ export default function ChatDemoPage() {
         {/* Messages */}
         <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar px-4 py-4 space-y-3">
           {messages.length === 0 && (
-            <div className="flex flex-col items-center justify-center h-full gap-3 opacity-40">
-              <MessageSquare size={36} style={{ color: 'var(--vg-text-tertiary)' }} />
-              <p className="text-sm" style={{ color: 'var(--vg-text-tertiary)' }}>
-                Send a message to start the conversation
+            <div className="flex flex-col items-center justify-center h-full gap-4">
+              <MessageSquare size={36} style={{ color: 'var(--vg-text-tertiary)' }} className="opacity-40" />
+              <p className="text-sm opacity-40" style={{ color: 'var(--vg-text-tertiary)' }}>
+                Try one of these demo prompts
               </p>
+              <div className="grid gap-2 w-full max-w-md">
+                {[
+                  { icon: FileText, label: 'Draft an L-1B support letter for Hiroshi Tanaka' },
+                  { icon: FileSpreadsheet, label: 'Generate a DS-160 for Tanaka\'s visa renewal' },
+                  { icon: ClipboardCheck, label: 'Prepare a case report for the Tanaka L-1B petition' },
+                ].map(({ icon: Icon, label }) => (
+                  <button
+                    key={label}
+                    onClick={() => { setInputValue(label); }}
+                    className="flex items-center gap-3 px-4 py-3 rounded-xl text-left text-sm transition-colors"
+                    style={{
+                      background: 'var(--vg-bg-tertiary)',
+                      color: 'var(--vg-text-secondary)',
+                      border: '1px solid var(--vg-border-default)',
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--vg-border-hover)' }}
+                    onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--vg-border-default)' }}
+                  >
+                    <Icon size={16} className="shrink-0" style={{ color: 'var(--vg-blue)' }} />
+                    <span>{label}</span>
+                  </button>
+                ))}
+              </div>
             </div>
           )}
 
